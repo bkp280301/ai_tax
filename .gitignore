@@ -18,8 +18,7 @@ build/
 .venv/
 venv/
 
-# Generated files
-*.pdf
+# Generated files (keep irs_docs/ PDFs — they're needed for the knowledge base)
 generate_*.py
 
 # Streamlit secrets
