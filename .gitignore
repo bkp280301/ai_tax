@@ -1,0 +1,26 @@
+# Environment
+.env
+.env.local
+
+# ChromaDB data (re-ingested on startup)
+chroma_db/
+
+# User uploads (session data, not for git)
+user_uploads/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Generated files
+*.pdf
+generate_*.py
+
+# Streamlit secrets
+.streamlit/secrets.toml

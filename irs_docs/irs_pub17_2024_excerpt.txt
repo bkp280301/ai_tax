@@ -1,0 +1,144 @@
+IRS PUBLICATION 17 - YOUR FEDERAL INCOME TAX (2024 TAX YEAR)
+Excerpted key sections for reference
+
+================================================================
+STANDARD DEDUCTION AMOUNTS (2024)
+================================================================
+- Single or Married Filing Separately: $14,600
+- Married Filing Jointly or Qualifying Surviving Spouse: $29,200
+- Head of Household: $21,900
+
+Additional Standard Deduction (age 65 or older / blind):
+- Single: +$1,950
+- Married Filing Jointly: +$1,550 per qualifying person
+
+================================================================
+TAX BRACKETS 2024 (Single Filers)
+================================================================
+10%  : $0 – $11,600
+12%  : $11,601 – $47,150
+22%  : $47,151 – $100,525
+24%  : $100,526 – $191,950
+32%  : $191,951 – $243,725
+35%  : $243,726 – $609,350
+37%  : Over $609,350
+
+================================================================
+TAX BRACKETS 2024 (Married Filing Jointly)
+================================================================
+10%  : $0 – $23,200
+12%  : $23,201 – $94,300
+22%  : $94,301 – $201,050
+24%  : $201,051 – $383,900
+32%  : $383,901 – $487,450
+35%  : $487,451 – $731,200
+37%  : Over $731,200
+
+================================================================
+RETIREMENT CONTRIBUTION LIMITS (2024)
+================================================================
+- 401(k) / 403(b) employee contribution limit: $23,000
+- 401(k) catch-up contribution (age 50+): additional $7,500
+- Traditional IRA contribution limit: $7,000
+- IRA catch-up contribution (age 50+): additional $1,000
+- IRA deductibility phases out for single filers with workplace plan: $77,000 – $87,000 MAGI
+- IRA deductibility phases out for MFJ with workplace plan: $123,000 – $143,000 MAGI
+
+================================================================
+COMMON ABOVE-THE-LINE DEDUCTIONS (Form 1040 Schedule 1)
+================================================================
+- Student loan interest: up to $2,500 (phases out $80,000–$95,000 single / $165,000–$195,000 MFJ)
+- Educator expenses: up to $300 ($600 MFJ both educators)
+- Health Savings Account (HSA) contributions: $4,150 (self-only) / $8,300 (family coverage)
+- Self-employed health insurance premiums: 100% deductible
+- Self-employment tax deduction: 50% of SE tax paid
+
+================================================================
+ITEMIZED DEDUCTIONS (Schedule A)
+================================================================
+State and Local Taxes (SALT):
+- Capped at $10,000 ($5,000 MFS) for combined state income/sales and property taxes
+
+Mortgage Interest:
+- Deductible on loans up to $750,000 (loans originated after Dec 15, 2017)
+- Points paid on home purchase loan fully deductible in year paid
+
+Charitable Contributions:
+- Cash donations: up to 60% of AGI
+- Property donations: up to 30% of AGI (FMV at time of donation)
+- Must have written acknowledgment for any donation of $250 or more
+
+Medical Expenses:
+- Deductible to extent they exceed 7.5% of AGI
+- Includes premiums for insurance not paid by employer, prescriptions, dental, vision
+
+================================================================
+CHILD AND DEPENDENT CARE CREDIT
+================================================================
+- Up to $3,000 qualifying expenses for 1 child; $6,000 for 2 or more
+- Credit rate: 20%–35% depending on AGI
+- AGI over $43,000 = 20% credit rate
+
+================================================================
+CHILD TAX CREDIT (2024)
+================================================================
+- $2,000 per qualifying child under age 17
+- Refundable portion (Additional Child Tax Credit): up to $1,700
+- Phase-out begins at $200,000 AGI (single) / $400,000 (MFJ)
+
+================================================================
+EARNED INCOME TAX CREDIT (EITC) 2024
+================================================================
+- 0 children: max credit $632, income limit ~$18,591 (single)
+- 1 child: max credit $4,213, income limit ~$49,084 (single)
+- 2 children: max credit $6,960, income limit ~$55,768 (single)
+- 3+ children: max credit $7,830, income limit ~$59,899 (single)
+
+================================================================
+SELF-EMPLOYMENT TAX
+================================================================
+- SE tax rate: 15.3% on net SE income up to Social Security wage base ($168,600 for 2024)
+- 2.9% Medicare tax on all net SE income above $168,600
+- Additional 0.9% Medicare surtax on SE income above $200,000 (single) / $250,000 (MFJ)
+
+================================================================
+ESTIMATED TAX PAYMENTS
+================================================================
+- Required if expected tax liability exceeds $1,000 after withholding
+- Due dates: April 15, June 17, September 16, January 15
+- Safe harbor: pay 100% of prior year tax liability (110% if prior year AGI > $150,000)
+
+================================================================
+CAPITAL GAINS TAX RATES (2024)
+================================================================
+Long-term capital gains (assets held >1 year):
+- 0%  : Taxable income up to $47,025 (single) / $94,050 (MFJ)
+- 15% : Taxable income $47,026–$518,900 (single) / $94,051–$583,750 (MFJ)
+- 20% : Taxable income above those thresholds
+
+Short-term capital gains: taxed as ordinary income
+
+Net Investment Income Tax (NIIT): 3.8% on lesser of net investment income or
+excess of MAGI over $200,000 (single) / $250,000 (MFJ)
+
+================================================================
+PENALTIES AND COMPLIANCE
+================================================================
+- Failure to file penalty: 5% of unpaid tax per month, max 25%
+- Failure to pay penalty: 0.5% of unpaid tax per month, max 25%
+- Accuracy-related penalty: 20% of underpayment due to negligence or substantial understatement
+- Substantial understatement: understating tax by more than 10% of correct tax or $5,000
+
+================================================================
+HOME OFFICE DEDUCTION (Self-Employed)
+================================================================
+- Simplified method: $5 per square foot, up to 300 sq ft (max $1,500)
+- Regular method: actual expenses × (home office sq ft / total home sq ft)
+- Space must be used regularly and exclusively for business
+
+================================================================
+VEHICLE DEDUCTION (Business Use)
+================================================================
+- Standard mileage rate 2024: 67 cents per mile for business
+- Actual expense method: deduct percentage of actual costs equal to business use %
+- Must maintain mileage log with date, destination, business purpose
