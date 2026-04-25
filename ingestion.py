@@ -1,46 +1,31 @@
 """
-Parses PDFs/docs into chunks and stores them in ChromaDB.
-Two collections: 'irs_regulations' and 'user_documents'.
+Parses PDFs/docs into chunks, generates embeddings, stores in Supabase pgvector.
 """
 
-import os
 import hashlib
 from pathlib import Path
 
-import fitz  # PyMuPDF
-import chromadb
-from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+import fitz
+from sentence_transformers import SentenceTransformer
 
-CHROMA_PATH = Path(__file__).parent / "chroma_db"
-CHUNK_SIZE = 800      # characters per chunk
-CHUNK_OVERLAP = 100   # overlap between chunks
+from supabase_db import upsert_documents, count_collection
+from supabase_db import delete_collection  # re-exported for app.py
 
-_client = None
-_embed_fn = None
+CHUNK_SIZE = 800
+CHUNK_OVERLAP = 100
 
-
-def _get_client():
-    global _client
-    if _client is None:
-        _client = chromadb.PersistentClient(path=str(CHROMA_PATH))
-    return _client
+_model = None
 
 
-def _get_embed_fn():
-    global _embed_fn
-    if _embed_fn is None:
-        _embed_fn = SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2"
-        )
-    return _embed_fn
+def _get_model():
+    global _model
+    if _model is None:
+        _model = SentenceTransformer("all-MiniLM-L6-v2")
+    return _model
 
 
-def _get_collection(name: str):
-    return _get_client().get_or_create_collection(
-        name=name,
-        embedding_function=_get_embed_fn(),
-        metadata={"hnsw:space": "cosine"},
-    )
+def _embed(texts: list[str]) -> list[list[float]]:
+    return _get_model().encode(texts, convert_to_numpy=True).tolist()
 
 
 def _extract_text(file_path: str) -> str:
@@ -60,13 +45,11 @@ def _extract_text(file_path: str) -> str:
 
 
 def _chunk_text(text: str) -> list[str]:
-    chunks = []
-    start = 0
+    chunks, start = [], 0
     while start < len(text):
-        end = start + CHUNK_SIZE
-        chunks.append(text[start:end].strip())
+        chunks.append(text[start : start + CHUNK_SIZE].strip())
         start += CHUNK_SIZE - CHUNK_OVERLAP
-    return [c for c in chunks if len(c) > 50]  # drop tiny trailing chunks
+    return [c for c in chunks if len(c) > 50]
 
 
 def _doc_id(file_path: str, chunk_index: int) -> str:
@@ -75,72 +58,40 @@ def _doc_id(file_path: str, chunk_index: int) -> str:
 
 
 def ingest_file(file_path: str, collection_name: str) -> int:
-    """
-    Ingest a single file into the given ChromaDB collection.
-    Returns the number of chunks stored.
-    Skips chunks already present (idempotent by doc_id).
-    """
     text = _extract_text(file_path)
     chunks = _chunk_text(text)
-    collection = _get_collection(collection_name)
-
+    if not chunks:
+        return 0
     ids = [_doc_id(file_path, i) for i in range(len(chunks))]
-    metadatas = [
-        {"source": Path(file_path).name, "chunk": i}
-        for i in range(len(chunks))
-    ]
-
-    # ChromaDB upsert is idempotent
-    collection.upsert(documents=chunks, ids=ids, metadatas=metadatas)
+    sources = [Path(file_path).name] * len(chunks)
+    indices = list(range(len(chunks)))
+    embeddings = _embed(chunks)
+    upsert_documents(ids, chunks, embeddings, sources, indices, collection_name)
     return len(chunks)
 
 
 def ingest_directory(dir_path: str, collection_name: str) -> dict:
-    """
-    Ingest all supported files in a directory.
-    Returns {filename: chunk_count}.
-    """
     supported = {".pdf", ".txt", ".md"}
     results = {}
     for file in Path(dir_path).iterdir():
         if file.suffix.lower() in supported:
-            count = ingest_file(str(file), collection_name)
-            results[file.name] = count
+            results[file.name] = ingest_file(str(file), collection_name)
     return results
-
-
-def delete_collection(name: str) -> None:
-    """Delete a ChromaDB collection (used to wipe per-session user data)."""
-    try:
-        _get_client().delete_collection(name)
-    except Exception:
-        pass
 
 
 def collection_stats(user_col: str = "user_documents",
                      prior_col: str = "prior_year_returns") -> dict:
-    """Return document counts for IRS base + the caller's session collections."""
-    client = _get_client()
-    stats = {}
-    for label, name in [("irs_regulations", "irs_regulations"),
-                         ("user_documents", user_col),
-                         ("prior_year_returns", prior_col)]:
-        try:
-            col = client.get_collection(name, embedding_function=_get_embed_fn())
-            stats[label] = col.count()
-        except Exception:
-            stats[label] = 0
-    return stats
+    return {
+        "irs_regulations": count_collection("irs_regulations"),
+        "user_documents":  count_collection(user_col),
+        "prior_year_returns": count_collection(prior_col),
+    }
 
 
 if __name__ == "__main__":
-    # One-time IRS loader: python ingestion.py
     irs_dir = Path(__file__).parent / "irs_docs"
-    print("Loading IRS documents...")
+    print("Loading IRS documents into Supabase...")
     results = ingest_directory(str(irs_dir), "irs_regulations")
-    if results:
-        for fname, count in results.items():
-            print(f"  {fname}: {count} chunks")
-    else:
-        print("  No files found in irs_docs/")
+    for fname, count in results.items():
+        print(f"  {fname}: {count} chunks")
     print("\nCollection stats:", collection_stats())

@@ -334,6 +334,7 @@ with st.sidebar:
                 st.session_state.history, user_col=USER_COL, prior_col=PRIOR_COL)
             st.session_state.savings_report = reply
             _extract_savings(reply)
+        st.success("Done! Open the 💰 Savings Report tab to see your results.")
         st.rerun()
 
     st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
@@ -387,10 +388,11 @@ with st.sidebar:
 # ── Main tabs ──────────────────────────────────────────────────────────────────
 st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
 
-tab_24, tab_23, tab_compare, tab_chat = st.tabs([
+tab_24, tab_23, tab_compare, tab_savings, tab_chat = st.tabs([
     "📅  Tax Year 2024",
     "📅  Tax Year 2023",
     "📊  Year-over-Year Comparison",
+    "💰  Savings Report",
     "💬  Chat with Aria",
 ])
 
@@ -652,53 +654,162 @@ with tab_compare:
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 5 — CHAT
+# TAB 5 — SAVINGS REPORT
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_savings:
+    if not st.session_state.savings_report:
+        st.markdown("""
+        <div style="text-align:center;padding:60px 20px;margin-top:20px">
+            <div style="font-size:48px;margin-bottom:16px">💰</div>
+            <div style="font-size:22px;font-weight:700;color:#fff;margin-bottom:12px">
+                No Savings Report Yet
+            </div>
+            <div style="font-size:14px;color:#8aadcc;max-width:440px;margin:0 auto;line-height:1.7">
+                Click <strong style="color:#f5a623">How to Save Money</strong> in the sidebar
+                to generate your personalized tax savings recommendations — specific dos &amp; don'ts,
+                dollar estimates, and year-over-year changes.
+            </div>
+        </div>""", unsafe_allow_html=True)
+    else:
+        report = st.session_state.savings_report
+
+        # ── Hero banner ──
+        total_m = re.search(r"TOTAL POTENTIAL SAVINGS[:\s\*]+\$?([\d,]+)", report, re.IGNORECASE)
+        total_val = f"${total_m.group(1)}" if total_m else "See report below"
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#062010,#0a2a15);
+                    border:2px solid #27ae60;border-radius:16px;
+                    padding:28px 40px;text-align:center;margin-bottom:28px;
+                    box-shadow:0 4px 30px rgba(39,174,96,.2)">
+            <div style="font-size:11px;font-weight:700;color:#7de8a8;
+                        text-transform:uppercase;letter-spacing:3px;margin-bottom:8px">
+                Total Potential Tax Savings Per Year
+            </div>
+            <div style="font-size:58px;font-weight:900;color:#2ecc71;
+                        letter-spacing:-2px;line-height:1.1">
+                {total_val}
+            </div>
+            <div style="font-size:13px;color:#a8d8b0;margin-top:10px">
+                Based on your uploaded financial data &amp; IRS regulations
+            </div>
+        </div>""", unsafe_allow_html=True)
+
+        # ── Parse into sections ──
+        def _section(text, start_marker, *end_markers):
+            """Extract text between start_marker and the first matching end_marker."""
+            i = text.find(start_marker)
+            if i == -1:
+                return ""
+            i += len(start_marker)
+            end = len(text)
+            for em in end_markers:
+                j = text.find(em, i)
+                if j != -1 and j < end:
+                    end = j
+            return text[i:end].strip()
+
+        # Dos — What to do lines
+        todos = re.findall(r'- What to do:\s*(.+)', report)
+        # Don'ts / risks implied by recommendation context
+        deadlines = re.findall(r'- Deadline:\s*(.+)', report)
+        rec_titles = re.findall(r'\*\*RECOMMENDATION \d+:\s*(.+?)\*\*', report)
+        savings_per_rec = re.findall(r'- Estimated Annual Savings:\s*(.+)', report)
+
+        # ── Dos & Don'ts card ──
+        if todos or rec_titles:
+            st.markdown("""<div class="sec-hdr">
+                <div class="sec-icon">✅</div>
+                <span class="sec-title">What To Do — Action Items</span>
+                <span class="sec-sub">— Ranked by savings</span>
+            </div>""", unsafe_allow_html=True)
+
+            col_do, col_dont = st.columns(2)
+            with col_do:
+                st.markdown("""<div style="background:linear-gradient(135deg,#041a0e,#062010);
+                    border:1px solid #1a6a2a;border-radius:12px;padding:20px 22px;height:100%">
+                    <div style="font-size:13px;font-weight:700;color:#2ecc71;margin-bottom:14px;
+                                text-transform:uppercase;letter-spacing:1px">✅ DO These Now</div>""",
+                    unsafe_allow_html=True)
+                for i, (title, action) in enumerate(zip(rec_titles, todos)):
+                    savings_str = savings_per_rec[i] if i < len(savings_per_rec) else ""
+                    st.markdown(f"""<div style="border-bottom:1px solid #1a4a2a;padding:10px 0;margin-bottom:6px">
+                        <div style="font-size:13px;font-weight:600;color:#7de8a8">{title.strip()}</div>
+                        <div style="font-size:12px;color:#c8e8d0;margin-top:4px">{action.strip()}</div>
+                        {f'<div style="font-size:11px;color:#2ecc71;margin-top:4px;font-weight:600">{savings_str.strip()}</div>' if savings_str else ''}
+                    </div>""", unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            with col_dont:
+                st.markdown("""<div style="background:linear-gradient(135deg,#1a0a00,#2a1200);
+                    border:1px solid #6a3a1a;border-radius:12px;padding:20px 22px;height:100%">
+                    <div style="font-size:13px;font-weight:700;color:#f5a623;margin-bottom:14px;
+                                text-transform:uppercase;letter-spacing:1px">⚠️ Act Before These Deadlines</div>""",
+                    unsafe_allow_html=True)
+                for i, title in enumerate(rec_titles):
+                    deadline = deadlines[i] if i < len(deadlines) else "Before tax filing"
+                    st.markdown(f"""<div style="border-bottom:1px solid #4a2a0a;padding:10px 0;margin-bottom:6px">
+                        <div style="font-size:13px;font-weight:600;color:#f5d48a">{title.strip()}</div>
+                        <div style="font-size:12px;color:#e8d0a8;margin-top:4px">🗓 {deadline.strip()}</div>
+                    </div>""", unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+        # ── Year-over-Year Changes ──
+        yoy_raw = _section(report, "YEAR-OVER-YEAR ANALYSIS", "TOTAL POTENTIAL SAVINGS", "---\n\n**TOTAL")
+        if yoy_raw:
+            st.markdown("""<div class="sec-hdr" style="margin-top:28px">
+                <div class="sec-icon">📅</div>
+                <span class="sec-title">Year-over-Year Changes</span>
+                <span class="sec-sub">— What changed and what to do differently</span>
+            </div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div style="background:#0a1020;border:1px solid #2a4a6a;
+                border-radius:12px;padding:24px 28px;line-height:1.85;font-size:14px;color:#c8d8e8;">
+                {yoy_raw.replace(chr(10),'<br>')}
+            </div>""", unsafe_allow_html=True)
+
+        # ── Full detailed report (collapsible) ──
+        with st.expander("📄 Full Detailed Report", expanded=False):
+            st.markdown(report)
+
+        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+        if st.button("🔄 Refresh Savings Report", key="refresh_savings_tab"):
+            with st.spinner("Finding savings opportunities..."):
+                reply, st.session_state.history = savings_recommendations(
+                    st.session_state.history, user_col=USER_COL, prior_col=PRIOR_COL)
+                st.session_state.savings_report = reply
+                _extract_savings(reply)
+            st.rerun()
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 6 — CHAT
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_chat:
     st.markdown("""<div class="sec-hdr">
         <div class="sec-icon">🤖</div>
         <span class="sec-title">Chat with Aria</span>
-        <span class="sec-sub">— Ask follow-up questions about your taxes</span>
+        <span class="sec-sub">— Ask anything about your taxes</span>
     </div>""", unsafe_allow_html=True)
 
-    # ── Savings report panel (shown when available) ───────────────────────
+    # ── Compact key actions quick-reference (only if savings report exists) ──
     if st.session_state.savings_report:
         report = st.session_state.savings_report
-        total_m = re.search(r"TOTAL POTENTIAL SAVINGS[:\s]+\$?([\d,]+)", report, re.IGNORECASE)
-        if total_m:
-            total_val = total_m.group(1)
-            st.markdown(f"""
-            <div style="background:linear-gradient(135deg,#0a2a10,#0d3515);
-                        border:2px solid #27ae60;border-radius:14px;
-                        padding:20px 28px;margin-bottom:20px;text-align:center;">
-                <div style="font-size:11px;font-weight:600;color:#7de8a8;
-                            text-transform:uppercase;letter-spacing:2px;margin-bottom:6px">
-                    Total Potential Savings Per Year
-                </div>
-                <div style="font-size:42px;font-weight:800;color:#2ecc71;letter-spacing:-1px;">
-                    ${total_val}
-                </div>
-            </div>""", unsafe_allow_html=True)
+        todos = re.findall(r'- What to do:\s*(.+)', report)
+        rec_titles = re.findall(r'\*\*RECOMMENDATION \d+:\s*(.+?)\*\*', report)
+        savings_per_rec = re.findall(r'- Estimated Annual Savings:\s*(.+)', report)
+        if rec_titles:
+            with st.expander("💡 Key Tax Actions — Quick Reference", expanded=True):
+                for i, title in enumerate(rec_titles[:6]):
+                    action = todos[i].strip() if i < len(todos) else ""
+                    savings_str = savings_per_rec[i].strip() if i < len(savings_per_rec) else ""
+                    badge = f'<span style="color:#2ecc71;font-weight:700;margin-left:8px">{savings_str}</span>' if savings_str else ""
+                    st.markdown(
+                        f'<div style="padding:7px 0;border-bottom:1px solid #1a3a4a;font-size:13px;color:#c8d8e8">'
+                        f'<span style="color:#7de8a8;font-weight:600">✅ {title.strip()}</span>{badge}'
+                        f'{"<br><span style=\'color:#8aadcc;font-size:12px\'>" + action + "</span>" if action else ""}'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
 
-        with st.expander("📋 View Full Savings Recommendations Report", expanded=False):
-            st.markdown(
-                f"""<div style="background:#080e18;border-radius:10px;padding:22px 26px;
-                               line-height:1.85;font-size:14px;color:#e8f0f8;">
-                {report.replace(chr(10), '<br>')}
-                </div>""",
-                unsafe_allow_html=True
-            )
-            if st.button("🔄 Refresh Recommendations", key="refresh_rec"):
-                with st.spinner("Refreshing..."):
-                    reply, st.session_state.history = savings_recommendations(
-                        st.session_state.history, user_col=USER_COL, prior_col=PRIOR_COL)
-                    st.session_state.savings_report = reply
-                    _extract_savings(reply)
-                st.rerun()
-
-    if not st.session_state.history and not st.session_state.savings_report:
-        st.markdown('<div class="info-box">💡 Run an analysis from the sidebar first, then ask follow-up questions here.</div>', unsafe_allow_html=True)
-
+    # ── Chat history ──
     for msg in st.session_state.history:
         role = msg["role"]
         content = msg["content"]
@@ -710,12 +821,12 @@ with tab_chat:
                              avatar="🧑" if role=="user" else "🤖"):
             st.markdown(content)
 
-    user_input = st.chat_input("Ask Aria: 'What if I max my 401k?' · 'Should I elect S-Corp?' · 'What deductions am I missing?'")
+    user_input = st.chat_input("Ask Aria anything: 'What if I max my 401k?' · 'Should I elect S-Corp?' · 'What deductions am I missing?'")
     if user_input:
         with st.chat_message("user", avatar="🧑"):
             st.markdown(user_input)
         with st.chat_message("assistant", avatar="🤖"):
-            with st.spinner("Aria is analyzing..."):
+            with st.spinner("Aria is thinking..."):
                 reply, st.session_state.history = chat(
                     st.session_state.history, user_input, user_col=USER_COL)
                 _extract_score(reply)
