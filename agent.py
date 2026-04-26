@@ -7,7 +7,7 @@ import base64
 import json
 import os
 from anthropic import Anthropic
-from rag import retrieve_and_format, retrieve_and_format_prior_year
+from rag import retrieve_and_format, retrieve_and_format_prior_year, retrieve_all_user_docs, retrieve_all_prior_docs
 
 client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 MODEL = "claude-haiku-4-5-20251001"
@@ -15,6 +15,13 @@ MODEL = "claude-haiku-4-5-20251001"
 SAVINGS_PROMPT = """You are Aria, a senior US tax strategist and CPA with 25 years of experience helping individuals and small business owners legally minimize their tax burden.
 
 Your ONLY job in this mode is to answer: "What specific actions should I take to pay less tax?"
+
+CRITICAL INSTRUCTIONS — READ BEFORE RESPONDING:
+1. The <current_year_data> block contains the user's ACTUAL financial documents — W-2s, 1099s, bank transactions, tax profile, deductions. USE EVERY NUMBER IN IT.
+2. NEVER say data is "not provided" or "missing". If a figure appears anywhere in the context, it IS provided.
+3. If something is truly absent, make a reasonable IRS-standard assumption and label it "(assumed)" — do NOT refuse to produce the report.
+4. You MUST produce all sections of the SAVINGS RECOMMENDATIONS REPORT regardless of what is or isn't in context.
+5. If the context contains W-2 wages, 1099 income, deductions, retirement contributions — cite the exact figures from it.
 
 You have access to:
 1. The user's CURRENT year financial data (transactions, W-2s, 1099s)
@@ -70,7 +77,9 @@ You have access to:
 - Cite the IRS rule, publication, or tax code section for each recommendation
 - Be specific: "Increase 401k by $8,000" not "consider contributing more"
 - Include implementation steps and deadlines
-- Never say you need more information — work with what is available"""
+- NEVER produce a "SITUATION ASSESSMENT" or "CRITICAL LIMITATION NOTICE" — go straight to the SAVINGS RECOMMENDATIONS REPORT
+- NEVER say you need more information — use what is in <current_year_data> and produce the full report
+- If you can see ANY financial figures in the context, use them. A single W-2 amount is enough to start."""
 
 SYSTEM_PROMPT = """You are Aria, a senior US tax attorney and CPA with 25 years of experience in personal finance, small business tax compliance, and IRS audit defense.
 
@@ -174,31 +183,37 @@ def chat(history: list[dict], user_input: str,
 
 def analyze_documents(history: list[dict],
                       user_col: str = "user_documents") -> tuple[str, list[dict]]:
-    prompt = (
-        "Using ALL the documents and bank transactions I have uploaded, produce a COMPLETE tax compliance analysis right now. "
-        "Do NOT ask for more documents. Use what is available and state assumptions where needed.\n\n"
-        "Your output MUST include every section:\n"
-        "1. COMPLIANCE SCORE (0-100)\n"
-        "2. INCOME FOUND — list every income source with dollar amount\n"
-        "3. DEDUCTIBLE EXPENSES — table with category, amount, IRS rule\n"
-        "4. ESTIMATED TAX POSITION — AGI, taxable income, tax owed, withheld, balance due or refund\n"
-        "5. KEY FINDINGS — specific dollar findings\n"
-        "6. COMPLIANCE RISKS — rated CRITICAL/HIGH/MEDIUM/LOW\n"
-        "7. RECOMMENDATIONS — numbered, with estimated tax savings per action\n\n"
-        "Produce the full report now using available data."
-    )
-    return chat(history, prompt, user_col=user_col, include_rag=True)
+    full_context = retrieve_all_user_docs(user_col)
+    prompt = f"""<uploaded_documents>
+{full_context}
+</uploaded_documents>
+
+Every figure above is from my actual uploaded financial documents. Use all of it now.
+Produce the COMPLETE tax compliance analysis:
+1. COMPLIANCE SCORE (0-100) with one-line reason
+2. INCOME FOUND — every source with dollar amount
+3. DEDUCTIBLE EXPENSES — table: category | amount | IRS rule
+4. ESTIMATED TAX POSITION — AGI, taxable income, tax owed, withheld, balance due/refund
+5. KEY FINDINGS — specific dollar findings
+6. COMPLIANCE RISKS — CRITICAL/HIGH/MEDIUM/LOW each
+7. RECOMMENDATIONS — numbered, with estimated tax savings per action
+
+Do not ask for more documents. Use all available data and produce the full report now."""
+    return chat(history, prompt, user_col=user_col, include_rag=False)
 
 
 def savings_recommendations(history: list[dict],
                             user_col: str = "user_documents",
                             prior_col: str = "prior_year_returns") -> tuple[str, list[dict]]:
-    current_context = retrieve_and_format(
-        "income wages deductions AGI tax current year", user_col=user_col)
-    prior_context = retrieve_and_format_prior_year(
-        "income AGI tax paid deductions prior year filing", prior_col=prior_col)
+    # Use comprehensive multi-query retrieval to get all user financial data
+    current_context = retrieve_all_user_docs(user_col)
+    prior_context   = retrieve_all_prior_docs(prior_col)
 
-    prompt = f"""<current_year_data>
+    prompt = f"""The following blocks contain the user's ACTUAL uploaded financial documents.
+Every figure you see is real data — W-2 wages, 1099 income, deductions, contributions, etc.
+USE ALL OF IT. Do not say anything is "not provided" — it IS in the data below.
+
+<current_year_data>
 {current_context}
 </current_year_data>
 
@@ -206,23 +221,15 @@ def savings_recommendations(history: list[dict],
 {prior_context}
 </prior_year_data>
 
-<request>
-Compare my current year financial data against my prior-year filing.
-Produce a complete TAX SAVINGS RECOMMENDATIONS REPORT that answers:
-1. What specific actions should I take RIGHT NOW to reduce my tax bill?
-2. What am I currently missing or under-utilizing?
-3. How does my current situation compare to last year — am I paying more or less, and why?
-4. What should I do DIFFERENTLY when filing this year vs last year?
-5. What changes should I make for next year's planning?
+Using every figure in the data above, produce the complete TAX SAVINGS RECOMMENDATIONS REPORT now:
+1. What specific dollar-amount actions should I take to reduce my tax bill?
+2. What deductions or credits am I under-utilizing?
+3. How does my current year compare to last year — more or less tax, and why?
+4. What should I do differently this filing vs last year?
+5. What changes for next year's planning?
 
-For every recommendation, give:
-- The exact dollar amount I will save
-- The specific IRS rule that allows it
-- The exact steps to implement it
-- The deadline to act
-
-Do NOT ask for more information. Use all available data and produce the full report now.
-</request>"""
+For every recommendation give: exact dollar savings, IRS rule, implementation steps, deadline.
+Start the report immediately — no preamble, no situation assessment, no "I cannot"."""
 
     updated_history = history + [{"role": "user", "content": prompt}]
     response = client.messages.create(
