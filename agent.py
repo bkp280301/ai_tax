@@ -234,6 +234,22 @@ Do NOT ask for more information. Use all available data and produce the full rep
     return reply, updated_history
 
 
+def chat_stream(history: list[dict], user_input: str,
+                user_col: str = "user_documents",
+                include_rag: bool = True):
+    """Streaming variant of chat(). Yields text tokens. Caller appends history."""
+    message_content = build_user_message(user_input, user_col=user_col, include_rag=include_rag)
+    updated_history = history + [{"role": "user", "content": message_content}]
+    with client.messages.stream(
+        model=MODEL,
+        max_tokens=3000,
+        system=SYSTEM_PROMPT,
+        messages=updated_history,
+    ) as stream:
+        for text in stream.text_stream:
+            yield text
+
+
 def analyze_transactions(history: list[dict],
                          user_col: str = "user_documents") -> tuple[str, list[dict]]:
     prompt = (

@@ -5,6 +5,7 @@ Professional two-year comparison dashboard with charts.
 
 import os
 import re
+import threading
 import uuid
 from pathlib import Path
 
@@ -15,8 +16,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# ── Background analysis result store ──────────────────────────────────────────
+_bg_results: dict = {}
+_bg_lock = threading.Lock()
+
 from ingestion import ingest_file, collection_stats, delete_collection, ingest_directory
-from agent import chat, analyze_documents, analyze_transactions, savings_recommendations
+from agent import chat, chat_stream, build_user_message, analyze_documents, analyze_transactions, savings_recommendations
 from transaction_parser import parse_transactions, summarize_transactions
 
 @st.cache_resource(show_spinner="Loading IRS knowledge base…")
@@ -279,6 +284,17 @@ def _metrics_row(s, label):
             <div class="{cls}">{sub}</div>
         </div>""", unsafe_allow_html=True)
 
+def _bg_savings_worker(sid: str, history: list, user_col: str, prior_col: str) -> None:
+    try:
+        reply, updated_history = savings_recommendations(
+            history, user_col=user_col, prior_col=prior_col)
+        with _bg_lock:
+            _bg_results[sid] = {"status": "done", "reply": reply, "history": updated_history}
+    except Exception as exc:
+        with _bg_lock:
+            _bg_results[sid] = {"status": "error", "reply": str(exc), "history": history}
+
+
 def _bar_chart(s, title, colorscale):
     cats = list(s["deductible_by_category"].keys())
     vals = list(s["deductible_by_category"].values())
@@ -308,9 +324,22 @@ PRIOR_COL = f"prior_docs_{_sid}"
 
 for k, v in [("history",[]),("compliance_score",None),("total_savings",None),
              ("tx_summary_24",None),("tx_summary_23",None),
-             ("savings_report",None),("analysis_report",None)]:
+             ("savings_report",None),("analysis_report",None),
+             ("bg_analysis_running",False)]:
     if k not in st.session_state:
         st.session_state[k] = v
+
+# ── Poll for background analysis result (runs on every rerun) ─────────────────
+if st.session_state.get("bg_analysis_running"):
+    result = _bg_results.get(_sid)
+    if result is not None:
+        if result["status"] == "done":
+            st.session_state.savings_report = result["reply"]
+            st.session_state.history = result["history"]
+            _extract_savings(result["reply"])
+        st.session_state.bg_analysis_running = False
+        with _bg_lock:
+            _bg_results.pop(_sid, None)
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -327,6 +356,20 @@ with st.sidebar:
 
     st.divider()
     st.markdown("**▶ Run Analysis**")
+
+    # ── Background status badge ──────────────────────────────────────────────
+    if st.session_state.get("bg_analysis_running"):
+        st.markdown(
+            '<div style="background:#1a2a00;border:1px solid #3a6a00;border-radius:8px;'
+            'padding:8px 12px;font-size:12px;color:#a8e060;text-align:center;margin-bottom:8px">'
+            '⚙️ Aria is analyzing in background…</div>',
+            unsafe_allow_html=True)
+    elif st.session_state.savings_report:
+        st.markdown(
+            '<div style="background:#041a0e;border:1px solid #27ae60;border-radius:8px;'
+            'padding:8px 12px;font-size:12px;color:#7de8a8;text-align:center;margin-bottom:8px">'
+            '✅ Savings report ready — see 💰 tab</div>',
+            unsafe_allow_html=True)
 
     if st.button("💰  How to Save Money", use_container_width=True, type="primary"):
         with st.spinner("Finding every saving opportunity..."):
@@ -360,14 +403,16 @@ with st.sidebar:
     st.divider()
 
     if st.button("🗑️  Clear Session", use_container_width=True):
-        # Delete this session's ChromaDB collections so data is fully wiped
         delete_collection(USER_COL)
         delete_collection(PRIOR_COL)
+        old_sid = _sid
         for k in ["history","compliance_score","total_savings",
-                  "tx_summary_24","tx_summary_23","savings_report","analysis_report"]:
+                  "tx_summary_24","tx_summary_23","savings_report","analysis_report",
+                  "bg_analysis_running"]:
             st.session_state[k] = [] if k == "history" else None
-        # Reset session ID so next upload gets a fresh collection
         del st.session_state["session_id"]
+        with _bg_lock:
+            _bg_results.pop(old_sid, None)
         st.rerun()
 
     # score + savings badges
@@ -415,7 +460,14 @@ with tab_24:
         if tx24 and st.button("Ingest 2024 Transactions", type="primary", key="btn_tx24"):
             with st.spinner("Parsing..."):
                 _ingest_tx(tx24, "2024")
-            st.markdown('<div class="success-box">✅ Transactions ingested.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="success-box">✅ Transactions ingested. Aria is analyzing in background…</div>', unsafe_allow_html=True)
+            if not st.session_state.get("bg_analysis_running"):
+                st.session_state.bg_analysis_running = True
+                threading.Thread(
+                    target=_bg_savings_worker,
+                    args=(_sid, list(st.session_state.history), USER_COL, PRIOR_COL),
+                    daemon=True,
+                ).start()
             st.rerun()
 
     with col_docs:
@@ -426,7 +478,14 @@ with tab_24:
         if docs24 and st.button("Ingest 2024 Documents", type="primary", key="btn_docs24"):
             with st.spinner("Processing..."):
                 _ingest_docs(docs24, "2024")
-            st.markdown('<div class="success-box">✅ Documents ingested.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="success-box">✅ Documents ingested. Aria is analyzing in background…</div>', unsafe_allow_html=True)
+            if not st.session_state.get("bg_analysis_running"):
+                st.session_state.bg_analysis_running = True
+                threading.Thread(
+                    target=_bg_savings_worker,
+                    args=(_sid, list(st.session_state.history), USER_COL, PRIOR_COL),
+                    daemon=True,
+                ).start()
 
     if st.session_state.tx_summary_24:
         st.markdown("""<div class="sec-hdr" style="margin-top:28px">
@@ -478,7 +537,14 @@ with tab_23:
         if tx23 and st.button("Ingest 2023 Transactions", type="primary", key="btn_tx23"):
             with st.spinner("Parsing..."):
                 _ingest_tx(tx23, "2023")
-            st.markdown('<div class="success-box">✅ 2023 transactions ingested.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="success-box">✅ 2023 transactions ingested. Aria is analyzing in background…</div>', unsafe_allow_html=True)
+            if not st.session_state.get("bg_analysis_running"):
+                st.session_state.bg_analysis_running = True
+                threading.Thread(
+                    target=_bg_savings_worker,
+                    args=(_sid, list(st.session_state.history), USER_COL, PRIOR_COL),
+                    daemon=True,
+                ).start()
             st.rerun()
 
     with col_docs:
@@ -489,7 +555,14 @@ with tab_23:
         if docs23 and st.button("Ingest 2023 Documents", type="primary", key="btn_docs23"):
             with st.spinner("Processing..."):
                 _ingest_docs(docs23, "2023")
-            st.markdown('<div class="success-box">✅ 2023 documents ingested.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="success-box">✅ 2023 documents ingested. Aria is analyzing in background…</div>', unsafe_allow_html=True)
+            if not st.session_state.get("bg_analysis_running"):
+                st.session_state.bg_analysis_running = True
+                threading.Thread(
+                    target=_bg_savings_worker,
+                    args=(_sid, list(st.session_state.history), USER_COL, PRIOR_COL),
+                    daemon=True,
+                ).start()
 
     if st.session_state.tx_summary_23:
         st.markdown("""<div class="sec-hdr" style="margin-top:28px">
@@ -826,10 +899,14 @@ with tab_chat:
         with st.chat_message("user", avatar="🧑"):
             st.markdown(user_input)
         with st.chat_message("assistant", avatar="🤖"):
-            with st.spinner("Aria is thinking..."):
-                reply, st.session_state.history = chat(
-                    st.session_state.history, user_input, user_col=USER_COL)
-                _extract_score(reply)
-                _extract_savings(reply)
-            st.markdown(reply)
+            reply = st.write_stream(
+                chat_stream(st.session_state.history, user_input, user_col=USER_COL)
+            )
+        rag_wrapped = build_user_message(user_input, user_col=USER_COL)
+        st.session_state.history = st.session_state.history + [
+            {"role": "user",      "content": rag_wrapped},
+            {"role": "assistant", "content": reply},
+        ]
+        _extract_score(reply)
+        _extract_savings(reply)
         st.rerun()
