@@ -801,11 +801,11 @@ with tab_chat:
                     action = todos[i].strip() if i < len(todos) else ""
                     savings_str = savings_per_rec[i].strip() if i < len(savings_per_rec) else ""
                     badge = f'<span style="color:#2ecc71;font-weight:700;margin-left:8px">{savings_str}</span>' if savings_str else ""
+                    action_html = f'<br><span style="color:#8aadcc;font-size:12px">{action}</span>' if action else ""
                     st.markdown(
                         f'<div style="padding:7px 0;border-bottom:1px solid #1a3a4a;font-size:13px;color:#c8d8e8">'
                         f'<span style="color:#7de8a8;font-weight:600">✅ {title.strip()}</span>{badge}'
-                        f'{"<br><span style=\'color:#8aadcc;font-size:12px\'>" + action + "</span>" if action else ""}'
-                        f'</div>',
+                        f'{action_html}</div>',
                         unsafe_allow_html=True
                     )
 
