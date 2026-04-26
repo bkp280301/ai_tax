@@ -21,7 +21,8 @@ _bg_results: dict = {}
 _bg_lock = threading.Lock()
 
 from ingestion import ingest_file, collection_stats, delete_collection, ingest_directory
-from agent import chat, chat_stream, build_user_message, analyze_documents, analyze_transactions, savings_recommendations
+from agent import chat, chat_stream, build_user_message, analyze_documents, analyze_transactions, savings_recommendations, extract_receipt
+from tax_calculator import compute_scenarios, TENFORTY_AVAILABLE, FILING_STATUSES, FILING_STATUS_LABELS, US_STATES
 from transaction_parser import parse_transactions, summarize_transactions
 
 @st.cache_resource(show_spinner="Loading IRS knowledge base…")
@@ -325,7 +326,9 @@ PRIOR_COL = f"prior_docs_{_sid}"
 for k, v in [("history",[]),("compliance_score",None),("total_savings",None),
              ("tx_summary_24",None),("tx_summary_23",None),
              ("savings_report",None),("analysis_report",None),
-             ("bg_analysis_running",False)]:
+             ("bg_analysis_running",False),
+             ("receipts_24",[]),("receipts_23",[]),
+             ("calc_scenarios",None)]:
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -408,8 +411,13 @@ with st.sidebar:
         old_sid = _sid
         for k in ["history","compliance_score","total_savings",
                   "tx_summary_24","tx_summary_23","savings_report","analysis_report",
-                  "bg_analysis_running"]:
-            st.session_state[k] = [] if k == "history" else None
+                  "bg_analysis_running","receipts_24","receipts_23","calc_scenarios"]:
+            if k in ("history","receipts_24","receipts_23"):
+                st.session_state[k] = []
+            elif k == "bg_analysis_running":
+                st.session_state[k] = False
+            else:
+                st.session_state[k] = None
         del st.session_state["session_id"]
         with _bg_lock:
             _bg_results.pop(old_sid, None)
@@ -433,11 +441,12 @@ with st.sidebar:
 # ── Main tabs ──────────────────────────────────────────────────────────────────
 st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
 
-tab_24, tab_23, tab_compare, tab_savings, tab_chat = st.tabs([
+tab_24, tab_23, tab_compare, tab_savings, tab_calc, tab_chat = st.tabs([
     "📅  Tax Year 2024",
     "📅  Tax Year 2023",
     "📊  Year-over-Year Comparison",
     "💰  Savings Report",
+    "🧮  What-If Calculator",
     "💬  Chat with Aria",
 ])
 
@@ -486,6 +495,35 @@ with tab_24:
                     args=(_sid, list(st.session_state.history), USER_COL, PRIOR_COL),
                     daemon=True,
                 ).start()
+
+    # ── Receipt image extraction ──────────────────────────────────────────────
+    st.markdown("""<div class="sec-hdr" style="margin-top:28px">
+        <div class="sec-icon">📸</div>
+        <span class="sec-title">Receipt &amp; Invoice Scanner</span>
+        <span class="sec-sub">— AI extracts merchant, amount, category automatically</span>
+    </div>""", unsafe_allow_html=True)
+    imgs24 = st.file_uploader("2024 receipt images", type=["jpg","jpeg","png","webp"],
+                               accept_multiple_files=True, label_visibility="collapsed", key="imgs24")
+    if imgs24 and st.button("📸 Extract Receipt Data", key="btn_imgs24", type="primary"):
+        with st.spinner("Aria is reading your receipts…"):
+            for img in imgs24:
+                ext = img.name.rsplit(".", 1)[-1].lower()
+                mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+                data = extract_receipt(img.read(), mime)
+                st.session_state.receipts_24.append({**data, "file": img.name})
+        st.rerun()
+    if st.session_state.receipts_24:
+        rdf = pd.DataFrame(st.session_state.receipts_24)
+        display_cols = [c for c in ["file","merchant","date","amount","category","is_deductible","notes"] if c in rdf.columns]
+        st.dataframe(rdf[display_cols], use_container_width=True, hide_index=True)
+        total_r = sum(r.get("amount", 0) for r in st.session_state.receipts_24)
+        ded_r   = sum(r.get("amount", 0) for r in st.session_state.receipts_24 if r.get("is_deductible"))
+        col_ra, col_rb = st.columns(2)
+        col_ra.markdown(f'<div class="info-box">Total receipts: <strong>${total_r:,.2f}</strong></div>', unsafe_allow_html=True)
+        col_rb.markdown(f'<div class="success-box">Deductible: <strong>${ded_r:,.2f}</strong></div>', unsafe_allow_html=True)
+        if st.button("🗑 Clear Receipts", key="clr_imgs24"):
+            st.session_state.receipts_24 = []
+            st.rerun()
 
     if st.session_state.tx_summary_24:
         st.markdown("""<div class="sec-hdr" style="margin-top:28px">
@@ -563,6 +601,35 @@ with tab_23:
                     args=(_sid, list(st.session_state.history), USER_COL, PRIOR_COL),
                     daemon=True,
                 ).start()
+
+    # ── Receipt image extraction ──────────────────────────────────────────────
+    st.markdown("""<div class="sec-hdr" style="margin-top:28px">
+        <div class="sec-icon">📸</div>
+        <span class="sec-title">Receipt &amp; Invoice Scanner</span>
+        <span class="sec-sub">— AI extracts merchant, amount, category automatically</span>
+    </div>""", unsafe_allow_html=True)
+    imgs23 = st.file_uploader("2023 receipt images", type=["jpg","jpeg","png","webp"],
+                               accept_multiple_files=True, label_visibility="collapsed", key="imgs23")
+    if imgs23 and st.button("📸 Extract Receipt Data", key="btn_imgs23", type="primary"):
+        with st.spinner("Aria is reading your receipts…"):
+            for img in imgs23:
+                ext = img.name.rsplit(".", 1)[-1].lower()
+                mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+                data = extract_receipt(img.read(), mime)
+                st.session_state.receipts_23.append({**data, "file": img.name})
+        st.rerun()
+    if st.session_state.receipts_23:
+        rdf = pd.DataFrame(st.session_state.receipts_23)
+        display_cols = [c for c in ["file","merchant","date","amount","category","is_deductible","notes"] if c in rdf.columns]
+        st.dataframe(rdf[display_cols], use_container_width=True, hide_index=True)
+        total_r = sum(r.get("amount", 0) for r in st.session_state.receipts_23)
+        ded_r   = sum(r.get("amount", 0) for r in st.session_state.receipts_23 if r.get("is_deductible"))
+        col_ra, col_rb = st.columns(2)
+        col_ra.markdown(f'<div class="info-box">Total receipts: <strong>${total_r:,.2f}</strong></div>', unsafe_allow_html=True)
+        col_rb.markdown(f'<div class="success-box">Deductible: <strong>${ded_r:,.2f}</strong></div>', unsafe_allow_html=True)
+        if st.button("🗑 Clear Receipts", key="clr_imgs23"):
+            st.session_state.receipts_23 = []
+            st.rerun()
 
     if st.session_state.tx_summary_23:
         st.markdown("""<div class="sec-hdr" style="margin-top:28px">
@@ -727,6 +794,138 @@ with tab_compare:
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 5 — WHAT-IF TAX CALCULATOR
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_calc:
+    st.markdown("""<div class="sec-hdr">
+        <div class="sec-icon">🧮</div>
+        <span class="sec-title">What-If Tax Calculator</span>
+        <span class="sec-sub">— Real IRS computations via Open Tax Solver</span>
+    </div>""", unsafe_allow_html=True)
+
+    if not TENFORTY_AVAILABLE:
+        st.markdown("""
+        <div class="warning-box">
+            ⚠️ <strong>tenforty</strong> requires Linux — it runs on the deployed Railway app but not on Windows locally.
+            The calculator will work once deployed.
+        </div>""", unsafe_allow_html=True)
+
+    col_form, col_res = st.columns([1, 2])
+
+    with col_form:
+        st.markdown("##### Enter Your Tax Details")
+        calc_filing = st.selectbox(
+            "Filing Status",
+            FILING_STATUSES,
+            format_func=lambda x: FILING_STATUS_LABELS.get(x, x),
+            key="calc_filing"
+        )
+        calc_state = st.selectbox(
+            "State", US_STATES,
+            index=US_STATES.index("TX") if "TX" in US_STATES else 0,
+            key="calc_state"
+        )
+        calc_age = st.number_input("Your Age", min_value=18, max_value=100, value=40, key="calc_age")
+        calc_w2 = st.number_input("W2 / Salary Income ($)", min_value=0, max_value=5_000_000,
+                                   value=100_000, step=5_000, key="calc_w2")
+        calc_se = st.number_input("Self-Employment Income ($)", min_value=0, max_value=2_000_000,
+                                   value=0, step=1_000, key="calc_se")
+        calc_dep = st.number_input("Number of Dependents", min_value=0, max_value=20,
+                                    value=0, key="calc_dep")
+
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        if st.button("🧮  Run What-If Scenarios", type="primary", use_container_width=True, key="btn_calc"):
+            with st.spinner("Computing real tax scenarios…"):
+                scenarios = compute_scenarios(
+                    w2_income=calc_w2, se_income=calc_se,
+                    filing_status=calc_filing, state=calc_state,
+                    num_dependents=calc_dep, age=calc_age,
+                )
+                st.session_state.calc_scenarios = scenarios
+            if scenarios is None:
+                st.warning("tenforty not available in this environment.")
+            st.rerun()
+
+    with col_res:
+        scenarios = st.session_state.get("calc_scenarios")
+        if not scenarios:
+            st.markdown("""
+            <div style="text-align:center;padding:60px 20px;color:#64a6d8">
+                <div style="font-size:40px;margin-bottom:12px">🧮</div>
+                <div style="font-size:16px">Fill in your details and click Run to see real tax scenarios</div>
+            </div>""", unsafe_allow_html=True)
+        else:
+            baseline = scenarios[0]
+            best = max(scenarios, key=lambda s: s["savings_vs_baseline"])
+
+            # ── Hero metrics ──
+            m1, m2, m3, m4 = st.columns(4)
+            m1.markdown(f"""<div class="metric-card">
+                <div class="metric-label">Current Tax Bill</div>
+                <div class="metric-value">${baseline['total_tax']:,.0f}</div>
+                <div class="delta-neu">Federal + State</div>
+            </div>""", unsafe_allow_html=True)
+            m2.markdown(f"""<div class="metric-card">
+                <div class="metric-label">Best Scenario Saves</div>
+                <div class="metric-value" style="color:#2ecc71">${best['savings_vs_baseline']:,.0f}</div>
+                <div class="delta-up">Per Year</div>
+            </div>""", unsafe_allow_html=True)
+            m3.markdown(f"""<div class="metric-card">
+                <div class="metric-label">Effective Rate</div>
+                <div class="metric-value">{baseline['effective_rate']:.1f}%</div>
+                <div class="delta-neu">Federal</div>
+            </div>""", unsafe_allow_html=True)
+            m4.markdown(f"""<div class="metric-card">
+                <div class="metric-label">Tax Bracket</div>
+                <div class="metric-value">{baseline['bracket']:.0f}%</div>
+                <div class="delta-neu">Marginal</div>
+            </div>""", unsafe_allow_html=True)
+
+            st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+
+            # ── Bar chart ──
+            labels = [s["scenario"] for s in scenarios]
+            totals = [s["total_tax"] for s in scenarios]
+            savings = [s["savings_vs_baseline"] for s in scenarios]
+            bar_colors = ["#1a5c96" if i == 0 else "#2ecc71" for i in range(len(scenarios))]
+
+            fig_calc = go.Figure(go.Bar(
+                x=labels, y=totals,
+                marker_color=bar_colors,
+                text=[f"${t:,.0f}" for t in totals],
+                textposition="outside",
+                textfont=dict(color="#c8d8e8", size=10),
+            ))
+            fig_calc.update_layout(
+                title=dict(text="Total Tax by Scenario", font=dict(color="#fff", size=14), x=0),
+                paper_bgcolor="#07090f", plot_bgcolor="#0d1b2e",
+                xaxis=dict(tickfont=dict(color="#c8d8e8", size=10), showgrid=False),
+                yaxis=dict(tickfont=dict(color="#8aadcc"), gridcolor="#1a3a6a",
+                           tickprefix="$", tickformat=",.0f"),
+                margin=dict(l=0, r=20, t=40, b=60), height=300,
+            )
+            st.plotly_chart(fig_calc, use_container_width=True)
+
+            # ── Comparison table ──
+            st.markdown("""<div class="sec-hdr">
+                <div class="sec-icon">📋</div>
+                <span class="sec-title">Scenario Breakdown</span>
+            </div>""", unsafe_allow_html=True)
+            rows = []
+            for s in scenarios:
+                rows.append({
+                    "Scenario":           s["scenario"],
+                    "Fed AGI":            f"${s['federal_agi']:,.0f}",
+                    "Taxable Income":     f"${s['taxable_income']:,.0f}",
+                    "Federal Tax":        f"${s['federal_tax']:,.0f}",
+                    "State Tax":          f"${s['state_tax']:,.0f}",
+                    "Total Tax":          f"${s['total_tax']:,.0f}",
+                    "Eff. Rate":          f"{s['effective_rate']:.1f}%",
+                    "You Save":           f"${s['savings_vs_baseline']:,.0f}" if s['savings_vs_baseline'] > 0 else "—",
+                })
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
 # TAB 5 — SAVINGS REPORT
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_savings:

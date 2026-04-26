@@ -3,6 +3,8 @@ Claude-powered tax advisor agent with session memory and RAG retrieval.
 Collection names are passed per-call so each user session is fully isolated.
 """
 
+import base64
+import json
 import os
 from anthropic import Anthropic
 from rag import retrieve_and_format, retrieve_and_format_prior_year
@@ -265,3 +267,54 @@ def analyze_transactions(history: list[dict],
         "Give the complete analysis now."
     )
     return chat(history, prompt, user_col=user_col, include_rag=True)
+
+
+def extract_receipt(image_bytes: bytes, media_type: str = "image/jpeg") -> dict:
+    """
+    Extract structured expense data from a receipt/invoice image using Claude Vision.
+    Returns dict: {merchant, date, amount, category, is_deductible, notes}
+    """
+    b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+    response = client.messages.create(
+        model=MODEL,
+        max_tokens=400,
+        messages=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": media_type, "data": b64},
+                },
+                {
+                    "type": "text",
+                    "text": (
+                        "Extract data from this receipt or invoice. "
+                        "Return ONLY valid JSON with these exact keys:\n"
+                        '{"merchant":"business name","date":"YYYY-MM-DD or empty string",'
+                        '"amount":0.00,"category":"meals|office|travel|utilities|software|medical|other",'
+                        '"is_deductible":true,"notes":"one-line description"}\n\n'
+                        "Rules: amount must be a float. "
+                        "is_deductible=true for business or medical expenses, false for personal. "
+                        "If a field is unclear, use an empty string or 0."
+                    ),
+                },
+            ],
+        }]
+    )
+    text = response.content[0].text.strip()
+    if "```" in text:
+        parts = text.split("```")
+        text = parts[1] if len(parts) > 1 else text
+        if text.lstrip().startswith("json"):
+            text = text.lstrip()[4:].strip()
+    try:
+        data = json.loads(text)
+        data["amount"] = float(data.get("amount", 0) or 0)
+        data["is_deductible"] = bool(data.get("is_deductible", False))
+        return data
+    except Exception:
+        return {
+            "merchant": "Unknown", "date": "", "amount": 0.0,
+            "category": "other", "is_deductible": False,
+            "notes": text[:120],
+        }
